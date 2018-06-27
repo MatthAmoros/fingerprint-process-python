@@ -2,11 +2,15 @@ import cv2
 import numpy as np
 
 def extract_skeleton(img):
+	"""
+	Extract skeleton image (repeat opening and substract)
+	@param img = binarized image
+	@return : skeleton image and iterations count
+	"""
 	skeleton = np.zeros(img.shape, np.uint8)
 	eroded = np.zeros(img.shape, np.uint8)
 	temp = np.zeros(img.shape, np.uint8)
-
-	thresh = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+	thresh = img.copy()
 
 	kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
 
@@ -22,7 +26,10 @@ def extract_skeleton(img):
 		if cv2.countNonZero(thresh) == 0:
 			return (skeleton,iters)
 
-def get_countour_orientation(img):
+def get_contours_orientation(img):
+	"""
+	Get contours orientation
+	"""
 	im2, contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 	"""
 	for i in range(len(contours)):
@@ -32,10 +39,25 @@ def get_countour_orientation(img):
 	cv2.drawContours(img, contours, -1, (0,255,0), 3)
 	return im2
 
+def crop_image_square(img, crop_size=5):
+	"""
+	Crop image into smaller windows
+	@param crop_size = window size
+	@return
+	"""
+	for r in range(0, img.shape[0] - crop_size, crop_size):
+		for c in range(0, img.shape[1] - crop_size, crop_size):
+			window = img[r:r+crop_size, c:c+crop_size]
+
+def filter_laplacian(img):
+	laplacian = cv.Laplacian(img,cv.CV_64F)
+	sobelx = cv.Sobel(img,cv.CV_64F,1,0,ksize=5)
+	sobely = cv.Sobel(img,cv.CV_64F,0,1,ksize=5)
+
 def pre_process(img):
 	"""
 	Resize and binarize image
-	@param : Grayscale image inferior to 300 x 300
+	@param img = Grayscale image inferior to 300 x 300
 	@return : 300x300 binarized image
 	"""
 	## Resize to squared image
@@ -46,9 +68,9 @@ def pre_process(img):
 	return thresh
 
 if __name__ == "__main__":
-
 	img = cv2.imread('./samples/01.png', 0)
 	img = pre_process(img)
+	crop_image_square(img)
 	cv2.imwrite('./fingerprint_extract/0_pre_proc.png', img)
 
 	skelet, iter = extract_skeleton(img)
