@@ -47,7 +47,7 @@ def pre_process(img):
 
 if __name__ == "__main__":
 
-	img = cv2.imread('./out.png', 0)
+	img = cv2.imread('./samples/01.png', 0)
 	img = pre_process(img)
 	cv2.imwrite('./fingerprint_extract/0_pre_proc.png', img)
 
