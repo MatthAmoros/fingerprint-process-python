@@ -54,11 +54,6 @@ def crop_image_square(img, crop_size=5):
 
 	return crop_collection
 
-def filter_laplacian(img):
-	laplacian = cv.Laplacian(img,cv.CV_64F)
-	sobelx = cv.Sobel(img,cv.CV_64F,1,0,ksize=5)
-	sobely = cv.Sobel(img,cv.CV_64F,0,1,ksize=5)
-
 def pre_process(img):
 	"""
 	Resize and binarize image
@@ -73,14 +68,13 @@ def pre_process(img):
 	return thresh
 
 if __name__ == "__main__":
-	img = cv2.imread('./samples/001_01_01.png', 0)
-	img = pre_process(img)
+	img = cv2.imread('./samples/001_01_0055.png', 0)
+	binarized = pre_process(img)
 
 	cropped_images = crop_image_square(img)
 
-	cv2.imwrite('./fingerprint_extract/0_pre_proc.png', img)
+	sobely = cv2.Sobel(img,cv2.CV_32F,0,1,ksize=5)
 
-	skelet, iter = extract_skeleton(img)
-	skelet = cv2.bitwise_not(skelet)
+	cv2.imwrite('./fingerprint_extract/0_pre_proc.png', binarized)
 
-	cv2.imwrite('./fingerprint_extract/1_skelet.png', skelet)
+	cv2.imwrite('./fingerprint_extract/2_sobely.png', sobely)
