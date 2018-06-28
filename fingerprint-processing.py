@@ -43,11 +43,16 @@ def crop_image_square(img, crop_size=5):
 	"""
 	Crop image into smaller windows
 	@param crop_size = window size
-	@return
+	@return an array of cropped windows
 	"""
+	crop_collection = []
+
 	for r in range(0, img.shape[0] - crop_size, crop_size):
 		for c in range(0, img.shape[1] - crop_size, crop_size):
 			window = img[r:r+crop_size, c:c+crop_size]
+			crop_collection.append(window)
+
+	return crop_collection
 
 def filter_laplacian(img):
 	laplacian = cv.Laplacian(img,cv.CV_64F)
@@ -61,19 +66,21 @@ def pre_process(img):
 	@return : 300x300 binarized image
 	"""
 	## Resize to squared image
-	img = cv2.resize(img, (300, 300))
+	img = cv2.resize(img, (400, 400))
 	## Compute binary image with an adaptative threshold
 	thresh = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
 
 	return thresh
 
 if __name__ == "__main__":
-	img = cv2.imread('./samples/01.png', 0)
+	img = cv2.imread('./samples/001_01_01.png', 0)
 	img = pre_process(img)
-	crop_image_square(img)
+
+	cropped_images = crop_image_square(img)
+
 	cv2.imwrite('./fingerprint_extract/0_pre_proc.png', img)
 
 	skelet, iter = extract_skeleton(img)
 	skelet = cv2.bitwise_not(skelet)
 
-	cv2.imwrite('./1_skelet.png', skelet)
+	cv2.imwrite('./fingerprint_extract/1_skelet.png', skelet)
