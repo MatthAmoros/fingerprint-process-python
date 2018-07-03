@@ -50,9 +50,11 @@ def pre_process(img):
 	"""
 	## Resize to squared image
 	img = cv2.resize(img, (300, 300))
-	_, img = cv2.threshold(img,127,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-	return img
+	## Threshold
+	_, thrsh = cv2.threshold(img,127,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+	return thrsh
 
 def get_crossnumber_map(img):
 	"""
@@ -67,17 +69,18 @@ def get_crossnumber_map(img):
 
 	""" Structure filters """
 	structure_line_end_01 = np.array([[-1, -1,-1],\
-								 	  [1,1,-1],\
+								 	  [-1,1,1],\
 								 	  [-1,-1,-1]])
 
 	structure_line_end_02 = np.array([[-1, -1,-1],\
-									  [-1,1, 1],\
+									  [1,1, -1],\
 									  [-1,-1,-1]])
 
 	strcuture_cross = np.array([[-1, 1,-1],\
 							  [1,1, 1],\
 							  [-1,1,-1]])
 
+	""" Ouput binary (0 - 1) image """
 	_, thresh = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
 
 	linear_weight_01 = cv2.filter2D(thresh, -1, structure_line_end_01)
@@ -92,6 +95,9 @@ def get_crossnumber_map(img):
 	for r in range(cn_map.shape[0]):
 		for c in range(cn_map.shape[1]):
 			if (r > 1 and c > 1) and (r < 299 and c < 299):
+				"""
+				From NIST Special Publication 500-245
+				"""
 				p = thresh[r][c]
 
 				p1 = thresh[r][c+1]
@@ -105,6 +111,7 @@ def get_crossnumber_map(img):
 				p7 = thresh[r+1][c]
 				p8 = thresh[r+1][c+1]
 				p9 = p1
+
 				sum = 0
 
 				sum += abs(p1 - p2)
@@ -135,10 +142,10 @@ def get_crossnumber_map(img):
 				elif cn == 2:
 					validated = sum_linear_weight == 3
 				elif cn == 3:
-					print(cross_weight[r][c])
 					validated = cross_weight[r][c] >= 3
 				elif cn == 4:
-					print("Crossing")
+					validated = True
+
 				if validated:
 					cn_hist[cn] += 1
 					cn_map[r][c] = cn
@@ -151,7 +158,7 @@ def get_crossnumber_map(img):
 	return cn_hist, cn_map
 
 if __name__ == "__main__":
-	img = cv2.imread('./samples/perfect_sample.png', 0)
+	img = cv2.imread('./samples/001_01_0055.png', 0)
 
 	colorized_output = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
 	colorized_output = cv2.resize(colorized_output, (300, 300))
@@ -169,6 +176,8 @@ if __name__ == "__main__":
 	cv2.imwrite('./fingerprint_extract/2_detections.png', cn_map)
 
 	circle_color = (0,0,0)
+	previous_feature_pos = (0,0)
+	first_feature_pos = (0,0)
 	for r in range(cn_map.shape[0]):
 		for c in range(cn_map.shape[1]):
 			minutiae_x = c
@@ -183,10 +192,11 @@ if __name__ == "__main__":
 			3 == bifurcation point
 			4 == crossing point
 			"""
+
 			if cn_map[r][c] > 0:
 				if cn_map[r][c] == 1:
 					circle_color = (0,255,0)
-					detected_feature = True ##DEBUG : Disabled
+					detected_feature = False ##DEBUG : Disabled
 				if cn_map[r][c] == 2:
 					circle_color = (255,0,0)
 					detected_feature = False ##DEBUG : Disabled
@@ -198,7 +208,13 @@ if __name__ == "__main__":
 					detected_feature = True
 
 				if detected_feature:
-					cv2.circle(colorized_output, (minutiae_x, minutiae_y), 10, circle_color, 1)
+					if previous_feature_pos[0] > 0:
+						cv2.line(colorized_output, previous_feature_pos, (minutiae_x, minutiae_y), [255,0,0], 1)
+					else:
+						first_feature_pos = (minutiae_x, minutiae_y)
+					cv2.circle(colorized_output, (minutiae_x, minutiae_y), 2, circle_color, -1)
+					previous_feature_pos = (minutiae_x, minutiae_y)
 
+	cv2.line(colorized_output, previous_feature_pos, first_feature_pos, [255,0,0], 1)
 
 	cv2.imwrite('./fingerprint_extract/3_detected_minutiae.png', colorized_output)
