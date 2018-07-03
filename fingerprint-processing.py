@@ -2,31 +2,6 @@ import cv2
 import numpy as np
 import math
 
-def extract_skeleton(img):
-	"""
-	Extract skeleton image (repeat opening and substract)
-	@param img = binarized image
-	@return : skeleton image and iterations count
-	"""
-	skeleton = np.zeros(img.shape, np.uint8)
-	eroded = np.zeros(img.shape, np.uint8)
-	temp = np.zeros(img.shape, np.uint8)
-	thresh = img.copy()
-
-	kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
-
-	iters = 0
-	while(True):
-		cv2.erode(thresh, kernel, eroded)
-		cv2.dilate(eroded, kernel, temp)
-		cv2.subtract(thresh, temp, temp)
-		cv2.bitwise_or(skeleton, temp, skeleton)
-		thresh, eroded = eroded, thresh # Swap instead of copy
-
-		iters += 1
-		if cv2.countNonZero(thresh) == 0:
-			return skeleton
-
 def crop_image_square(img, crop_size=3):
 	"""
 	Crop image into smaller windows
@@ -52,7 +27,8 @@ def pre_process(img):
 	img = cv2.resize(img, (300, 300))
 
 	## Threshold
-	_, thrsh = cv2.threshold(img,127,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+	_, thrsh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
 	return thrsh
 
@@ -79,6 +55,10 @@ def get_crossnumber_map(img):
 	strcuture_cross = np.array([[-1, 1,-1],\
 							  [1,1, 1],\
 							  [-1,1,-1]])
+
+	strcuture_cross_02 = np.array([[1, 1, 1],\
+									  [-1, -1, 1],\
+									  [1, 1, 1]])
 
 	""" Ouput binary (0 - 1) image """
 	_, thresh = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
@@ -157,6 +137,13 @@ def get_crossnumber_map(img):
 	print("Cross number hist : " + str(cn_hist))
 	return cn_hist, cn_map
 
+def draw_minitiae(img, minutiae_pos):
+	for i in range(len(minutiae_pos)):
+		cv2.circle(img, (minutiae_pos[i][0], minutiae_pos[i][1]), 2, minutiae_pos[i][2], -1)
+
+	return img
+
+
 if __name__ == "__main__":
 	img = cv2.imread('./samples/001_01_0055.png', 0)
 
@@ -178,6 +165,7 @@ if __name__ == "__main__":
 	circle_color = (0,0,0)
 	previous_feature_pos = (0,0)
 	first_feature_pos = (0,0)
+	features_pos = []
 	for r in range(cn_map.shape[0]):
 		for c in range(cn_map.shape[1]):
 			minutiae_x = c
@@ -194,27 +182,23 @@ if __name__ == "__main__":
 			"""
 
 			if cn_map[r][c] > 0:
-				if cn_map[r][c] == 1:
+				type = cn_map[r][c]
+				if type == 1:
 					circle_color = (0,255,0)
 					detected_feature = False ##DEBUG : Disabled
-				if cn_map[r][c] == 2:
+				if type == 2:
 					circle_color = (255,0,0)
 					detected_feature = False ##DEBUG : Disabled
-				if cn_map[r][c] == 3:
+				if type == 3:
 					circle_color = (0,0,255)
 					detected_feature = True
-				elif cn_map[r][c] == 4:
+				elif type == 4:
 					circle_color = (255,255,0)
 					detected_feature = True
 
 				if detected_feature:
-					if previous_feature_pos[0] > 0:
-						cv2.line(colorized_output, previous_feature_pos, (minutiae_x, minutiae_y), [255,0,0], 1)
-					else:
-						first_feature_pos = (minutiae_x, minutiae_y)
-					cv2.circle(colorized_output, (minutiae_x, minutiae_y), 2, circle_color, -1)
-					previous_feature_pos = (minutiae_x, minutiae_y)
+					features_pos.append((minutiae_x, minutiae_y, circle_color))
 
-	cv2.line(colorized_output, previous_feature_pos, first_feature_pos, [255,0,0], 1)
+	detection = draw_minitiae(colorized_output, features_pos)
 
-	cv2.imwrite('./fingerprint_extract/3_detected_minutiae.png', colorized_output)
+	cv2.imwrite('./fingerprint_extract/3_detected_minutiae.png', detection)
