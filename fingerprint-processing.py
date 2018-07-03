@@ -65,15 +65,28 @@ def get_crossnumber_map(img):
 
 	print("Input image : " + str(image_x) + "x" + str(image_y))
 
-	local_compute = np.array([[1, 1,1],\
-									  [1,1,1],\
-									  [1,1,1]])
+	""" Structure filters """
+	structure_line_end_01 = np.array([[-1, -1,-1],\
+								 	  [1,1,-1],\
+								 	  [-1,-1,-1]])
 
-	_, thresh = cv2.threshold(img,127,1,cv2.THRESH_BINARY)
-	filtered = cv2.filter2D(thresh,-1,local_compute)
+	structure_line_end_02 = np.array([[-1, -1,-1],\
+									  [-1,1, 1],\
+									  [-1,-1,-1]])
+
+	strcuture_cross = np.array([[-1, 1,-1],\
+							  [1,1, 1],\
+							  [-1,1,-1]])
+
+	_, thresh = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
+
+	linear_weight_01 = cv2.filter2D(thresh, -1, structure_line_end_01)
+	linear_weight_02 = cv2.filter2D(thresh, -1, structure_line_end_02)
+	cross_weight = cv2.filter2D(thresh, -1, strcuture_cross)
+
+	""" Intialize CN map and histogram """
 	cn_map = np.zeros(thresh.shape, np.uint8)
 	cn_hist = np.zeros([5])
-
 
 	""" Using cross number to detect minutiae """
 	for r in range(cn_map.shape[0]):
@@ -94,14 +107,14 @@ def get_crossnumber_map(img):
 				p9 = p1
 				sum = 0
 
-				sum += math.fabs(p1 - p2)
-				sum += math.fabs(p2 - p3)
-				sum += math.fabs(p3 - p4)
-				sum += math.fabs(p4 - p5)
-				sum += math.fabs(p5 - p6)
-				sum += math.fabs(p6 - p7)
-				sum += math.fabs(p7 - p8)
-				sum += math.fabs(p8 - p9)
+				sum += abs(p1 - p2)
+				sum += abs(p2 - p3)
+				sum += abs(p3 - p4)
+				sum += abs(p4 - p5)
+				sum += abs(p5 - p6)
+				sum += abs(p6 - p7)
+				sum += abs(p7 - p8)
+				sum += abs(p8 - p9)
 				cn = 0.5 * sum
 
 				##NOTE : OUTPUT is > 128, why ?
@@ -113,19 +126,19 @@ def get_crossnumber_map(img):
 				3 == bifurcation point
 				4 == crossing point
 				"""
-				""" Using local neighbors to validate minutiae """
+				""" Using structure filter to validate minutiae """
 				validated = False
-				weight = filtered[r][c]
+				sum_linear_weight = linear_weight_01[r][c] + linear_weight_02[r][c]
 
 				if cn == 1:
-					validated = weight == 1
+					validated = sum_linear_weight == 1
 				elif cn == 2:
-					validated = weight == 3
+					validated = sum_linear_weight == 3
 				elif cn == 3:
-					validated = weight >= 3 or weight <= 5
+					print(cross_weight[r][c])
+					validated = cross_weight[r][c] >= 3
 				elif cn == 4:
-					print(weight)
-
+					print("Crossing")
 				if validated:
 					cn_hist[cn] += 1
 					cn_map[r][c] = cn
@@ -138,7 +151,7 @@ def get_crossnumber_map(img):
 	return cn_hist, cn_map
 
 if __name__ == "__main__":
-	img = cv2.imread('./samples/001_01_0042.png', 0)
+	img = cv2.imread('./samples/perfect_sample.png', 0)
 
 	colorized_output = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
 	colorized_output = cv2.resize(colorized_output, (300, 300))
@@ -173,7 +186,7 @@ if __name__ == "__main__":
 			if cn_map[r][c] > 0:
 				if cn_map[r][c] == 1:
 					circle_color = (0,255,0)
-					detected_feature = False ##DEBUG : Disabled
+					detected_feature = True ##DEBUG : Disabled
 				if cn_map[r][c] == 2:
 					circle_color = (255,0,0)
 					detected_feature = False ##DEBUG : Disabled
