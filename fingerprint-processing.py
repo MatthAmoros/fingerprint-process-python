@@ -29,10 +29,76 @@ def pre_process(img):
 	img = cv2.resize(img, (300, 300))
 
 	## Threshold
-
 	_, thrsh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
 	return thrsh
+
+def filter_out_small_elements(img, size=1):
+	"""
+	Filter out small elements
+	@param img = Thinned image
+	@param size = Element size
+	@return filtered image
+	"""
+	_, contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	""" Get contours surfaces """
+	areas = [cv2.contourArea(c) for c in contours]
+
+	for cnt in range(len(areas)):
+		if(areas[cnt] < size):
+			cv2.drawContours(img, [contours[cnt]], 0, (0,255,0), -1)
+
+	return img
+
+def get_external_contour(img, margin=1):
+	"""
+	Get external object borders
+	@param img = Thinned image
+	@param margin = Applied margin
+	@return bounding box
+	"""
+	""" Finding bounding box """
+	""" Blur to smooth contours """
+	blurred = cv2.blur(img,(20,20))
+	_, contours, hierarchy = cv2.findContours(blurred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+	""" Get biggest contours """
+	areas = [cv2.contourArea(c) for c in contours]
+	max_index = np.argmax(areas)
+	cnt=contours[max_index]
+
+	""" x, y, w, h of bounding rectangle """
+	bounding_box = cv2.minAreaRect(cnt)
+	bounding_box = cv2.boxPoints(bounding_box)
+	bounding_box = np.int0(bounding_box)
+
+	""" Apply margin """
+	bounding_box = bounding_box * margin
+	bounding_box = np.int0(bounding_box)
+
+
+	out = img.copy()
+	cv2.drawContours(out, [bounding_box], 0, (255,0,255), 2)
+
+	cv2.imwrite('./fingerprint_extract/0-5_bounds.png', out)
+
+	return bounding_box
+
+def is_point_in_rectangle(point, rectangle):
+	"""
+	Return True if point is contained in rectangle
+	@param point = (x,y)
+	@param rectangle = aray[4][2]
+	@return boolean
+	"""
+	x = point[0]
+	y = point[1]
+
+	rect_1 = rectangle[1]
+	rect_2 = rectangle[3]
+
+	return (x > rect_1[0] and x < rect_2[0] and y > rect_1[1] and y < rect_2[1])
+
 
 def get_crossnumber_map(img):
 	"""
@@ -62,12 +128,26 @@ def get_crossnumber_map(img):
 									  [-1, -1, 1],\
 									  [1, 1, 1]])
 
+	""" Filter out small surface element to avoid nosie """
+	img = filter_out_small_elements(img)
+
 	""" Ouput binary (0 - 1) image """
 	_, thresh = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
 
 	linear_weight_01 = cv2.filter2D(thresh, -1, structure_line_end_01)
 	linear_weight_02 = cv2.filter2D(thresh, -1, structure_line_end_02)
 	cross_weight = cv2.filter2D(thresh, -1, strcuture_cross)
+
+	""" Get external contour to verify found minutiae """
+	external_contour = get_external_contour(img)
+
+	center_x = math.ceil(external_contour[3][0] / 2)
+	center_y = math.ceil(external_contour[3][1] / 2)
+	radius = math.ceil((external_contour[3][0] - external_contour[1][0]) / 2)
+
+	print("Box center : " + str((center_x, center_y)))
+	print("Peripherical radius : " + str(radius))
+	print("Bounding box : " + str(external_contour))
 
 	""" Intialize CN map and histogram """
 	cn_map = np.zeros(thresh.shape, np.uint8)
@@ -84,7 +164,12 @@ def get_crossnumber_map(img):
 				From NIST Special Publication 500-245
 				Cross number algorithm
 				"""
+
 				p = thresh[r][c]
+
+				""" To avoid noise, check that current point is included in fingerprint contours """
+				if is_point_in_rectangle((r, c), external_contour) == False:
+					continue
 
 				p1 = thresh[r][c+1]
 				p2 = thresh[r-1][c+1]
@@ -126,6 +211,11 @@ def get_crossnumber_map(img):
 
 				if cn == 1:
 					validated = sum_linear_weight == 1
+					""" Check for peripherical points """
+					""" Used to avoid storing ridge ending on fingerprint endings """
+					#DEBUG Disabled
+					is_external = False#(calculate_eucl_dist((r, c), (center_x, center_y)) > radius)
+					validated = validated and not is_external
 				elif cn == 2:
 					validated = sum_linear_weight == 3
 				elif cn == 3:
@@ -145,13 +235,22 @@ def get_crossnumber_map(img):
 	return cn_hist, cn_map
 
 def draw_minitiae(img, minutiae_pos):
-
 	for i in range(len(minutiae_pos)):
 		#NOTE : Red filled circle of 2px at minutiae center
 		cv2.circle(img, (minutiae_pos[i][0], minutiae_pos[i][1]), 2, minutiae_pos[i][2], -1)
 
-
 	return img
+
+def calculate_eucl_dist(p1, p2):
+	x1 = p1[0]
+	y1 = p1[1]
+	x2 = p2[0]
+	y2 = p2[1]
+
+	eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
+	eucl_dist = math.trunc(eucl_dist)
+
+	return eucl_dist
 
 def build_template(minutiae_pos):
 	"""
@@ -161,21 +260,11 @@ def build_template(minutiae_pos):
 
 	""" Compute euclidean distance for each minutiae """
 	for i in range(len(minutiae_pos) - 1):
-		x1 = minutiae_pos[i][0]
-		y1 = minutiae_pos[i][1]
-		x2 = minutiae_pos[i+1][0]
-		y2 = minutiae_pos[i+1][1]
-		eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-		eucl_dist = math.trunc(eucl_dist)
+		eucl_dist = calculate_eucl_dist(minutiae_pos[i], minutiae_pos[i+1])
 		template[i] = (eucl_dist, minutiae_pos[i][3])
 
 	""" Compute last one """
-	x1 = minutiae_pos[len(minutiae_pos) - 1][0]
-	y1 = minutiae_pos[len(minutiae_pos) - 1][1]
-	x2 = minutiae_pos[0][0]
-	y2 = minutiae_pos[0][1]
-	eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-	eucl_dist = math.trunc(eucl_dist)
+	eucl_dist = calculate_eucl_dist(minutiae_pos[len(minutiae_pos) - 1], minutiae_pos[0])
 	template[len(minutiae_pos) - 1] = (eucl_dist, minutiae_pos[len(minutiae_pos) - 1][3])
 
 	""" Sort """
@@ -195,9 +284,14 @@ def save_to_json_file(template_name, template):
 		listify = template.tolist()
 		json.dump(listify, outfile)
 
-if __name__ == "__main__":
-	subject = '001_01'
-	img = cv2.imread('./samples/perfect_sample_001.png', 0)
+def build_template_from_image(image_path, subject_name):
+	"""
+	Build a template of minutiae from specified grayscale image
+	@param image_path = Path to fingerprint image file
+	@param subject_name = Subject name, ussed to name template
+	"""
+	subject = subject_name
+	img = cv2.imread(image_path, 0)
 
 	colorized_output = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
 	colorized_output = cv2.resize(colorized_output, (300, 300))
@@ -237,7 +331,7 @@ if __name__ == "__main__":
 				type = cn_map[r][c]
 				if type == 1:
 					circle_color = (0,255,0)
-					detected_feature = False ##DEBUG : Disabled
+					detected_feature = True ##DEBUG : Disabled
 				if type == 2:
 					circle_color = (255,0,0)
 					detected_feature = False ##DEBUG : Disabled
@@ -257,6 +351,64 @@ if __name__ == "__main__":
 
 	template = build_template(features_pos)
 
+	print("Template : ")
 	print(template)
 
 	save_to_json_file(subject, template)
+
+def compare_templates(template_1, tamplate_2):
+	"""
+	Compare two templates (Numpy arrays) and returns matching score
+	@param template_1 = Minutiae template
+	@param template_2 = Minutiae template
+	@return Matching score ( 0 - 100% ), Matching minutiae
+	"""
+
+	smallest_template = ()
+	score = 0
+
+	if(len(template_1) <= len(tamplate_2)):
+		smallest_template = template_1
+	else:
+		smallest_template = tamplate_2
+
+	intersect_result = np.zeros(len(smallest_template), dtype='int, int')
+
+	for mn in template_1:
+		for mn_dest in tamplate_2:
+			if (mn == mn_dest).all():
+				intersect_result[score] = (mn[0], mn[1])
+				score += 1
+
+	score = score / len(template_1) * 100
+
+	print("Found : " + str(score) + "% matching")
+	return score, intersect_result
+
+def load_template_from_file(file_path):
+	with open(file_path) as f:
+		template = np.array(json.load(f))
+
+	return template
+
+if __name__ == "__main__":
+	"""
+	Test
+	"""
+	print("Loading previously acquiered templates")
+	temp1 = load_template_from_file('./templates/001_01.tmplt')
+	temp2 = load_template_from_file('./templates/001_01 (copy).tmplt')
+
+
+	score, intersect = compare_templates(temp1, temp2)
+
+	print("Compute new template from image")
+	build_template_from_image('./samples/001_01_0063.png', '001_01_02')
+	temp3 = load_template_from_file('./templates/001_01_02.tmplt')
+
+	print(str(type(intersect)))
+
+	score, intersect = compare_templates(intersect, temp3)
+	print("Matching score " + str(score))
+
+	print(intersect)
