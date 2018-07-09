@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import math
+import json
+
 
 def crop_image_square(img, crop_size=3):
 	"""
@@ -71,12 +73,16 @@ def get_crossnumber_map(img):
 	cn_map = np.zeros(thresh.shape, np.uint8)
 	cn_hist = np.zeros([5])
 
+	""" Implicit cast to float to avoid buffer overflow """
+	thresh = 1.0 * thresh
+
 	""" Using cross number to detect minutiae """
 	for r in range(cn_map.shape[0]):
 		for c in range(cn_map.shape[1]):
 			if (r > 1 and c > 1) and (r < 299 and c < 299):
 				"""
 				From NIST Special Publication 500-245
+				Cross number algorithm
 				"""
 				p = thresh[r][c]
 
@@ -94,20 +100,21 @@ def get_crossnumber_map(img):
 
 				sum = 0
 
-				sum += abs(p1 - p2)
-				sum += abs(p2 - p3)
-				sum += abs(p3 - p4)
-				sum += abs(p4 - p5)
-				sum += abs(p5 - p6)
-				sum += abs(p6 - p7)
-				sum += abs(p7 - p8)
-				sum += abs(p8 - p9)
+				sum += np.fabs(p1 - p2)
+				sum += np.fabs(p2 - p3)
+				sum += np.fabs(p3 - p4)
+				sum += np.fabs(p4 - p5)
+				sum += np.fabs(p5 - p6)
+				sum += np.fabs(p6 - p7)
+				sum += np.fabs(p7 - p8)
+				sum += np.fabs(p8 - p9)
 				cn = 0.5 * sum
 
-				##NOTE : OUTPUT is > 128, why ?
-				cn = math.ceil(cn / 128.0)
+				""" Cast back to int, to use it as an array index """
+				cn = int(cn)
 
 				"""
+				0 == Nothing
 				1 == Ridge ending point
 				2 == Continuing ridge point
 				3 == bifurcation point
@@ -150,7 +157,7 @@ def build_template(minutiae_pos):
 	"""
 	Compute distance between each minutiae and return it as an array
 	"""
-	template = []
+	template = np.zeros(len(minutiae_pos), dtype='int, int')
 
 	""" Compute euclidean distance for each minutiae """
 	for i in range(len(minutiae_pos) - 1):
@@ -159,7 +166,8 @@ def build_template(minutiae_pos):
 		x2 = minutiae_pos[i+1][0]
 		y2 = minutiae_pos[i+1][1]
 		eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-		template.append((eucl_dist, minutiae_pos[i][3]))
+		eucl_dist = math.trunc(eucl_dist)
+		template[i] = (eucl_dist, minutiae_pos[i][3])
 
 	""" Compute last one """
 	x1 = minutiae_pos[len(minutiae_pos) - 1][0]
@@ -167,16 +175,29 @@ def build_template(minutiae_pos):
 	x2 = minutiae_pos[0][0]
 	y2 = minutiae_pos[0][1]
 	eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-	template.append((eucl_dist, minutiae_pos[len(minutiae_pos) - 1][3]))
+	eucl_dist = math.trunc(eucl_dist)
+	template[len(minutiae_pos) - 1] = (eucl_dist, minutiae_pos[len(minutiae_pos) - 1][3])
 
 	""" Sort """
 	template.sort()
 
+	""" Distinct """
+	template = np.unique(template)
+
 	return template
 
+def save_to_json_file(template_name, template):
+	"""
+	Save template to JSON file for later use
+	"""
+	with open('./templates/' + template_name + '.tmplt', 'w') as outfile:
+		""" Numpy arrays need to be converted to list to be dumped to JSON """
+		listify = template.tolist()
+		json.dump(listify, outfile)
 
 if __name__ == "__main__":
-	img = cv2.imread('./samples/001_01_0055.png', 0)
+	subject = '001_01'
+	img = cv2.imread('./samples/perfect_sample_001.png', 0)
 
 	colorized_output = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
 	colorized_output = cv2.resize(colorized_output, (300, 300))
@@ -237,3 +258,5 @@ if __name__ == "__main__":
 	template = build_template(features_pos)
 
 	print(template)
+
+	save_to_json_file(subject, template)
