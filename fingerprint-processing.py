@@ -1,3 +1,4 @@
+import sys
 import cv2
 import numpy as np
 import math
@@ -145,10 +146,6 @@ def get_crossnumber_map(img):
 	center_y = math.ceil(external_contour[3][1] / 2)
 	radius = math.ceil((external_contour[3][0] - external_contour[1][0]) / 2)
 
-	print("Box center : " + str((center_x, center_y)))
-	print("Peripherical radius : " + str(radius))
-	print("Bounding box : " + str(external_contour))
-
 	""" Intialize CN map and histogram """
 	cn_map = np.zeros(thresh.shape, np.uint8)
 	cn_hist = np.zeros([5])
@@ -230,8 +227,15 @@ def get_crossnumber_map(img):
 			else:
 				cn_map[r][c] = 0
 
+	minutiae_found = False
+	for n in cn_hist:
+		if n > 0:
+			minutiae_found = True
+			break;
 
-	print("Cross number hist : " + str(cn_hist))
+	if minutiae_found == False:
+		raise Exception("No minutiae detected")
+
 	return cn_hist, cn_map
 
 def draw_minitiae(img, minutiae_pos):
@@ -256,6 +260,9 @@ def build_template(minutiae_pos):
 	"""
 	Compute distance between each minutiae and return it as an array
 	"""
+	if(len(minutiae_pos) == 0):
+		raise Exception("No minutiae detected")
+
 	template = np.zeros(len(minutiae_pos), dtype='int, int')
 
 	""" Compute euclidean distance for each minutiae """
@@ -281,7 +288,9 @@ def save_to_json_file(template_name, template):
 	"""
 	with open('./templates/' + template_name + '.tmplt', 'w') as outfile:
 		""" Numpy arrays need to be converted to list to be dumped to JSON """
-		listify = template.tolist()
+		listify = template
+		if isinstance(template, list) == False:
+			listify = template.tolist()
 		json.dump(listify, outfile)
 
 def build_template_from_image(image_path, subject_name):
@@ -351,9 +360,6 @@ def build_template_from_image(image_path, subject_name):
 
 	template = build_template(features_pos)
 
-	print("Template : ")
-	print(template)
-
 	save_to_json_file(subject, template)
 
 def compare_templates(template_1, tamplate_2):
@@ -365,29 +371,37 @@ def compare_templates(template_1, tamplate_2):
 	"""
 
 	smallest_template = ()
+	target = ()
 	score = 0
 
 	if(len(template_1) <= len(tamplate_2)):
 		smallest_template = template_1
+		target = tamplate_2
 	else:
 		smallest_template = tamplate_2
+		target = template_1
 
-	intersect_result = np.zeros(len(smallest_template), dtype='int, int')
+	""" List to contain intersection """
+	intersect_result = []
 
-	for mn in template_1:
-		for mn_dest in tamplate_2:
-			if (mn == mn_dest).all():
-				intersect_result[score] = (mn[0], mn[1])
+	for mn in smallest_template:
+		try:
+			if mn in target:
+				intersect_result.append(mn)
 				score += 1
+		except FutureWarning:
+			pass
 
-	score = score / len(template_1) * 100
+	score = int(score / 2)
+
+	score = math.ceil(score / len(smallest_template) * 100)
 
 	print("Found : " + str(score) + "% matching")
 	return score, intersect_result
 
 def load_template_from_file(file_path):
 	with open(file_path) as f:
-		template = np.array(json.load(f))
+		template = json.load(f)
 
 	return template
 
@@ -395,20 +409,43 @@ if __name__ == "__main__":
 	"""
 	Test
 	"""
-	print("Loading previously acquiered templates")
-	temp1 = load_template_from_file('./templates/001_01.tmplt')
-	temp2 = load_template_from_file('./templates/001_01 (copy).tmplt')
+	print("Building template from 4 images")
+	build_template_from_image('./samples/001_01_01.png', '001_01_01')
+	temp1 = load_template_from_file('./templates/001_01_01.tmplt')
+
+	build_template_from_image('./samples/001_01_0029.png', '001_01_02')
+	temp2 = load_template_from_file('./templates/001_01_02.tmplt')
+
+	build_template_from_image('./samples/001_01_0042.png', '001_01_03')
+	temp3 = load_template_from_file('./templates/001_01_03.tmplt')
+
+	build_template_from_image('./samples/001_01_0055.png', '001_01_04')
+	temp4 = load_template_from_file('./templates/001_01_04.tmplt')
+
+	score, intersect_12 = compare_templates(temp1, temp2)
+	score, intersect_43 = compare_templates(temp4, temp3)
+
+	score, intersect_42 = compare_templates(temp4, temp2)
+	score, intersect_13 = compare_templates(temp1, temp3)
+
+	score, intersect_acc1 = compare_templates(intersect_12, intersect_13)
+	score, intersect_acc2 = compare_templates(intersect_42, intersect_43)
+
+	score, intersect_acc = compare_templates(intersect_acc1, intersect_acc2)
+
+	save_to_json_file('accumulated_001', intersect_acc)
 
 
-	score, intersect = compare_templates(temp1, temp2)
+	build_template_from_image('./samples/001_01_0080.png', '001_01_05')
+	temp_candidate = load_template_from_file('./templates/001_01_05.tmplt')
 
-	print("Compute new template from image")
-	build_template_from_image('./samples/001_01_0063.png', '001_01_02')
-	temp3 = load_template_from_file('./templates/001_01_02.tmplt')
+	build_template_from_image('./samples/001_03_00856.png', '001_03_01')
+	temp_false = load_template_from_file('./templates/001_03_01.tmplt')
 
-	print(str(type(intersect)))
+	""" Should match """
+	print("Candidate : ")
+	score, intersect = compare_templates(temp_candidate, intersect_acc)
 
-	score, intersect = compare_templates(intersect, temp3)
-	print("Matching score " + str(score))
-
-	print(intersect)
+	print("False candidate : ")
+	""" Should not match """
+	score, intersect = compare_templates(temp_false, intersect_acc)
