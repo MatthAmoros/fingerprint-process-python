@@ -159,7 +159,7 @@ def build_template(minutiae_pos):
 		x2 = minutiae_pos[i+1][0]
 		y2 = minutiae_pos[i+1][1]
 		eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-		template.append(eucl_dist)
+		template.append((eucl_dist, minutiae_pos[i][3]))
 
 	""" Compute last one """
 	x1 = minutiae_pos[len(minutiae_pos) - 1][0]
@@ -167,7 +167,7 @@ def build_template(minutiae_pos):
 	x2 = minutiae_pos[0][0]
 	y2 = minutiae_pos[0][1]
 	eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
-	template.append(eucl_dist)
+	template.append((eucl_dist, minutiae_pos[len(minutiae_pos) - 1][3]))
 
 	""" Sort """
 	template.sort()
@@ -228,7 +228,7 @@ if __name__ == "__main__":
 					detected_feature = True
 
 				if detected_feature:
-					features_pos.append((minutiae_x, minutiae_y, circle_color))
+					features_pos.append((minutiae_x, minutiae_y, circle_color, type))
 
 	detection = draw_minitiae(colorized_output, features_pos)
 
