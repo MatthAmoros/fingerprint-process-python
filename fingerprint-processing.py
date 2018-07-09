@@ -138,10 +138,41 @@ def get_crossnumber_map(img):
 	return cn_hist, cn_map
 
 def draw_minitiae(img, minutiae_pos):
+
 	for i in range(len(minutiae_pos)):
+		#NOTE : Red filled circle of 2px at minutiae center
 		cv2.circle(img, (minutiae_pos[i][0], minutiae_pos[i][1]), 2, minutiae_pos[i][2], -1)
 
+
 	return img
+
+def build_template(minutiae_pos):
+	"""
+	Compute distance between each minutiae and return it as an array
+	"""
+	template = []
+
+	""" Compute euclidean distance for each minutiae """
+	for i in range(len(minutiae_pos) - 1):
+		x1 = minutiae_pos[i][0]
+		y1 = minutiae_pos[i][1]
+		x2 = minutiae_pos[i+1][0]
+		y2 = minutiae_pos[i+1][1]
+		eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
+		template.append(eucl_dist)
+
+	""" Compute last one """
+	x1 = minutiae_pos[len(minutiae_pos) - 1][0]
+	y1 = minutiae_pos[len(minutiae_pos) - 1][1]
+	x2 = minutiae_pos[0][0]
+	y2 = minutiae_pos[0][1]
+	eucl_dist = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
+	template.append(eucl_dist)
+
+	""" Sort """
+	template.sort()
+
+	return template
 
 
 if __name__ == "__main__":
@@ -202,3 +233,7 @@ if __name__ == "__main__":
 	detection = draw_minitiae(colorized_output, features_pos)
 
 	cv2.imwrite('./fingerprint_extract/3_detected_minutiae.png', detection)
+
+	template = build_template(features_pos)
+
+	print(template)
