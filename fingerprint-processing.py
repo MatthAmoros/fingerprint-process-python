@@ -98,7 +98,7 @@ def is_point_in_rectangle(point, rectangle):
 	rect_1 = rectangle[1]
 	rect_2 = rectangle[3]
 
-	return (x > rect_1[0] and x < rect_2[0] and y > rect_1[1] and y < rect_2[1])
+	return ((x > rect_1[0] and x < rect_2[0] and y > rect_1[1] and y < rect_2[1]) or (rect_1[0] == 0 or rect_2[0] == 300 or rect_1[1] == 0 or rect_2[1] == 300))
 
 
 def get_crossnumber_map(img):
@@ -109,8 +109,6 @@ def get_crossnumber_map(img):
 	"""
 	image_x = img.shape[0]
 	image_y = img.shape[1]
-
-	print("Input image : " + str(image_x) + "x" + str(image_y))
 
 	""" Structure filters """
 	structure_line_end_01 = np.array([[-1, -1,-1],\
@@ -126,8 +124,8 @@ def get_crossnumber_map(img):
 							  [-1,1,-1]])
 
 	strcuture_cross_02 = np.array([[1, 1, 1],\
-									  [-1, -1, 1],\
-									  [1, 1, 1]])
+									[-1, -1, 1],\
+									[1, 1, 1]])
 
 	""" Filter out small surface element to avoid nosie """
 	img = filter_out_small_elements(img)
@@ -211,7 +209,7 @@ def get_crossnumber_map(img):
 					""" Check for peripherical points """
 					""" Used to avoid storing ridge ending on fingerprint endings """
 					#DEBUG Disabled
-					is_external = False#(calculate_eucl_dist((r, c), (center_x, center_y)) > radius)
+					is_external = (calculate_eucl_dist((r, c), (center_x, center_y)) > radius)
 					validated = validated and not is_external
 				elif cn == 2:
 					validated = sum_linear_weight == 3
@@ -223,7 +221,6 @@ def get_crossnumber_map(img):
 				if validated:
 					cn_hist[cn] += 1
 					cn_map[r][c] = cn
-
 			else:
 				cn_map[r][c] = 0
 
@@ -236,16 +233,19 @@ def get_crossnumber_map(img):
 	if minutiae_found == False:
 		raise Exception("No minutiae detected")
 
-	return cn_hist, cn_map
+	return cn_hist, cn_map, (center_x, center_y)
 
 def draw_minitiae(img, minutiae_pos):
 	for i in range(len(minutiae_pos)):
-		#NOTE : Red filled circle of 2px at minutiae center
+		#NOTE : color filled circle of 2px at minutiae center
 		cv2.circle(img, (minutiae_pos[i][0], minutiae_pos[i][1]), 2, minutiae_pos[i][2], -1)
 
 	return img
 
 def calculate_eucl_dist(p1, p2):
+	"""
+	Standard euclidean distance
+	"""
 	x1 = p1[0]
 	y1 = p1[1]
 	x2 = p2[0]
@@ -256,7 +256,7 @@ def calculate_eucl_dist(p1, p2):
 
 	return eucl_dist
 
-def build_template(minutiae_pos):
+def build_template(minutiae_pos, anchor=(0,0)):
 	"""
 	Compute distance between each minutiae and return it as an array
 	"""
@@ -313,7 +313,7 @@ def build_template_from_image(image_path, subject_name):
 
 	cv2.imwrite('./fingerprint_extract/1_thinned.png', thinned)
 
-	cn_hist, cn_map = get_crossnumber_map(thinned)
+	cn_hist, cn_map, anchor = get_crossnumber_map(thinned)
 
 	cv2.imwrite('./fingerprint_extract/2_detections.png', cn_map)
 
@@ -343,7 +343,7 @@ def build_template_from_image(image_path, subject_name):
 					detected_feature = True ##DEBUG : Disabled
 				if type == 2:
 					circle_color = (255,0,0)
-					detected_feature = False ##DEBUG : Disabled
+					detected_feature = True ##DEBUG : Disabled
 				if type == 3:
 					circle_color = (0,0,255)
 					detected_feature = True
@@ -358,7 +358,7 @@ def build_template_from_image(image_path, subject_name):
 
 	cv2.imwrite('./fingerprint_extract/3_detected_minutiae.png', detection)
 
-	template = build_template(features_pos)
+	template = build_template(features_pos, anchor)
 
 	save_to_json_file(subject, template)
 
@@ -409,43 +409,75 @@ if __name__ == "__main__":
 	"""
 	Test
 	"""
-	print("Building template from 4 images")
-	build_template_from_image('./samples/001_01_01.png', '001_01_01')
-	temp1 = load_template_from_file('./templates/001_01_01.tmplt')
+	perfect_test = True
+	if(perfect_test):
+		build_template_from_image('./samples/perfect_sample_001.png', 'perf_01')
+		temp1 = load_template_from_file('./templates/perf_01.tmplt')
 
-	build_template_from_image('./samples/001_01_0029.png', '001_01_02')
-	temp2 = load_template_from_file('./templates/001_01_02.tmplt')
+		build_template_from_image('./samples/perfect_sample_002.png', 'perf_02')
+		temp2 = load_template_from_file('./templates/perf_02.tmplt')
 
-	build_template_from_image('./samples/001_01_0042.png', '001_01_03')
-	temp3 = load_template_from_file('./templates/001_01_03.tmplt')
+		build_template_from_image('./samples/perfect_sample_003.png', 'perf_03')
+		temp3 = load_template_from_file('./templates/perf_03.tmplt')
 
-	build_template_from_image('./samples/001_01_0055.png', '001_01_04')
-	temp4 = load_template_from_file('./templates/001_01_04.tmplt')
+		score, intersect_12 = compare_templates(temp1, temp2)
 
-	score, intersect_12 = compare_templates(temp1, temp2)
-	score, intersect_43 = compare_templates(temp4, temp3)
+		score, intersect_13 = compare_templates(temp1, temp3)
+		score, intersect_23 = compare_templates(temp2, temp3)
 
-	score, intersect_42 = compare_templates(temp4, temp2)
-	score, intersect_13 = compare_templates(temp1, temp3)
+		score, intersect_acc1 = compare_templates(intersect_12, intersect_13)
+		score, intersect_acc2 = compare_templates(intersect_13, intersect_23)
 
-	score, intersect_acc1 = compare_templates(intersect_12, intersect_13)
-	score, intersect_acc2 = compare_templates(intersect_42, intersect_43)
+		score, intersect_acc = compare_templates(intersect_acc1, intersect_acc2)
 
-	score, intersect_acc = compare_templates(intersect_acc1, intersect_acc2)
+		print("Save accumulated template")
+		save_to_json_file('accumulated_perf', intersect_acc)
 
-	save_to_json_file('accumulated_001', intersect_acc)
+		print("Loading candidates")
+		build_template_from_image('./samples/perfect_sample_005.png', 'perf_05')
+		temp_candidate = load_template_from_file('./templates/perf_04.tmplt')
 
+		""" Should match """
+		print("Candidate : ")
+		score, intersect = compare_templates(temp_candidate, intersect_acc)
 
-	build_template_from_image('./samples/001_01_0080.png', '001_01_05')
-	temp_candidate = load_template_from_file('./templates/001_01_05.tmplt')
+		sys.exit(0)
+	else:
+		print("Building template from 4 images")
+		build_template_from_image('./samples/001_01_01.png', '001_01_01')
+		temp1 = load_template_from_file('./templates/001_01_01.tmplt')
 
-	build_template_from_image('./samples/001_03_00856.png', '001_03_01')
-	temp_false = load_template_from_file('./templates/001_03_01.tmplt')
+		build_template_from_image('./samples/001_01_0029.png', '001_01_02')
+		temp2 = load_template_from_file('./templates/001_01_02.tmplt')
 
-	""" Should match """
-	print("Candidate : ")
-	score, intersect = compare_templates(temp_candidate, intersect_acc)
+		build_template_from_image('./samples/001_01_0042.png', '001_01_03')
+		temp3 = load_template_from_file('./templates/001_01_03.tmplt')
 
-	print("False candidate : ")
-	""" Should not match """
-	score, intersect = compare_templates(temp_false, intersect_acc)
+		build_template_from_image('./samples/001_01_other_reader.bmp', '001_01_04')
+		temp4 = load_template_from_file('./templates/001_01_04.tmplt')
+
+		print("Comparing templates")
+		score, intersect = compare_templates(temp2, temp1)
+		score, intersect = compare_templates(temp3, intersect)
+
+		score, intersect_acc = compare_templates(temp4, intersect)
+
+		print("Save accumulated template")
+		save_to_json_file('accumulated_001', intersect_acc)
+
+		print("Loading candidates")
+		build_template_from_image('./samples/001_01_0080.png', '001_01_05')
+		temp_candidate = load_template_from_file('./templates/001_01_05.tmplt')
+
+		build_template_from_image('./samples/001_03_00856.png', '001_03_01')
+		temp_false = load_template_from_file('./templates/001_03_01.tmplt')
+
+		""" Should match """
+		print("Candidate : ")
+		score, intersect = compare_templates(temp_candidate, intersect_acc)
+
+		print("False candidate : ")
+		""" Should not match """
+		score, intersect = compare_templates(temp_false, intersect_acc)
+
+		sys.exit(0)
